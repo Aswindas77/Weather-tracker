@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Weather } from './weather.schema';
 import { Model } from 'mongoose';
 import { CreateWeatherDto } from './weather.dto';
-import { RabbitMQService } from '../queue/queue.service';
+import { RabbitMQService } from '../infrastructure/rabbitMq/queue.service';
 import axios from 'axios';
 
 @Injectable()

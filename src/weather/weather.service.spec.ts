@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { WeatherService } from './weather.service';
-import { RabbitMQService } from '../queue/queue.service';
+import { RabbitMQService } from '../infrastructure/rabbitMq/queue.service';
 import { getModelToken } from '@nestjs/mongoose';
 import { Weather } from './weather.schema';
 import axios from 'axios';

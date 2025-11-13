@@ -1,7 +1,7 @@
 import {Injectable, Logger, OnModuleInit, OnModuleDestroy,}
  from '@nestjs/common';
 import * as amqp from 'amqplib';
-import  {CreateWeatherDto}  from '../weather/weather.dto';
+import  {CreateWeatherDto}  from '../../weather/weather.dto';
 
 @Injectable()
 export class RabbitMQService implements OnModuleInit, OnModuleDestroy {

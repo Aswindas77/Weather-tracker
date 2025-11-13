@@ -1,8 +1,8 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { RabbitMQService } from './queue.service';
 import * as amqp from 'amqplib';
-import { CreateWeatherDto } from '../weather/weather.dto';
-import { WeatherService } from '../weather/weather.service';
+import { CreateWeatherDto } from '../../weather/weather.dto';
+import { WeatherService } from '../../weather/weather.service';
 
 @Injectable()
 export class RabbitConsumer implements OnApplicationBootstrap {

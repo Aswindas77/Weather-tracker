@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { WeatherModule } from './weather/weather.module';
 import { ConfigModule } from '@nestjs/config';
-import { QueueModule } from './queue/queue.module';
+import { QueueModule } from './infrastructure/rabbitMq/queue.module';
 
 @Module({
   imports: [
