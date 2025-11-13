@@ -3,54 +3,96 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Weather } from './weather.schema';
 import { Model } from 'mongoose';
 import { CreateWeatherDto } from './weather.dto';
+import { RabbitMQService } from '../queue/queue.service';
 import axios from 'axios';
 
 @Injectable()
 export class WeatherService {
+  
+  private readonly WEATHER_QUEUE = 'weather-requests';
+
   constructor(
     @InjectModel(Weather.name) private weatherModel: Model<Weather>,
+    private readonly rabbitMQService: RabbitMQService,
   ) {}
 
-
-
-  
   async createWeather(data: CreateWeatherDto) {
-    const { city, lat, lon } = data;
-    const apiKey = process.env.OPENWEATHER_API_KEY;
-
-    if (!apiKey) {
-      throw new HttpException('API key is missing', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-
-    const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&appid=${apiKey}`;
-
-
-    let weatherData;
-
-    try {
-      const response = await axios.get(url);
-      weatherData = response.data;
-    } catch (error: any) {
-      const detail = error?.response?.data ?? error?.message ?? 'Unknown error';
-      throw new HttpException(
-        `Failed to fetch weather: ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`,
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    
-    const weatherReport = {
-      temperature: weatherData?.main?.temp ?? 0,
-      humidity: weatherData?.main?.humidity ?? 0,
-      pressure: weatherData?.main?.pressure ?? 0,
+    await this.rabbitMQService.sendToQueue(this.WEATHER_QUEUE, data);
+    return {
+      message: 'Weather request queued successfully',
+      city: data.city,
+      
     };
-
-    const newEntry = await this.weatherModel.create({ city, lat, lon, weatherReport });
-    return newEntry; 
   }
 
+  async processWeatherData(data: CreateWeatherDto) {
+    const apiKey = this.validateApiKey();
+  const weatherData = await this.fetchWeatherFromAPI(data, apiKey);
+  const weatherReport = this.extractWeatherReport(weatherData);
+  return await this.saveWeatherEntry(data, weatherReport);
+  }
+
+  private validateApiKey():string {
+    const apiKey = process.env.OPENWEATHER_API_KEY;
+    if (!apiKey) {
+    throw new HttpException('API key is missing', HttpStatus.INTERNAL_SERVER_ERROR);
+  }
+  return apiKey
+  }
+
+private async fetchWeatherFromAPI(data: CreateWeatherDto, apiKey: string) {
+  const url = this.buildWeatherUrl(data, apiKey);
+  const response = await this.safeAxiosGet(url);
+  return response.data;
+}
 
 
+private async safeAxiosGet(url: string) {
+  const response = await axios
+    .get(url)
+    .catch((error: any) => {
+      throw this.buildWeatherFetchError(error);
+    });
+  return response;
+}
+
+
+
+private buildWeatherUrl(data: CreateWeatherDto, apiKey: string): string {
+  const { lat, lon } = data;
+  return `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&appid=${apiKey}`;
+}
+
+
+private buildWeatherFetchError(error: any): HttpException {
+  const detail = this.extractErrorDetail(error);
+  const message =
+    typeof detail === 'string'
+      ? detail
+      : JSON.stringify(detail);
+  return new HttpException(`Failed to fetch weather: ${message}`, HttpStatus.BAD_REQUEST);
+}
+
+private extractErrorDetail(error: any): any {
+  return (
+    error?.response?.data ||
+    'Unknown error'
+  );
+}
+
+private extractWeatherReport(weatherData: any) {
+  return {
+    temperature: weatherData?.main?.temp ?? 0,
+    humidity: weatherData?.main?.humidity ?? 0,
+    pressure: weatherData?.main?.pressure ?? 0,
+  };
+}
+
+
+private async saveWeatherEntry(data: CreateWeatherDto, weatherReport: any) {
+  const { city, lat, lon } = data;
+  return await this.weatherModel.create({ city, lat, lon, weatherReport });
+}
 
 
   
