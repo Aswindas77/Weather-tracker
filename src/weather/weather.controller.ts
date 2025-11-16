@@ -18,12 +18,12 @@ export class WeatherController {
 
   @Get(':id')
   getOne(@Param('id') id: string) {
-    return this.weatherService.getById(id);
+    return this.weatherService.getWeatherUsingKafka(id);
   }
 
   @Put(':id')
   update(@Param('id') id: string, @Body() data: CreateWeatherDto) {
-    return this.weatherService.update(id, data);
+    return this.weatherService.updateWeatherData(id, data);
   }
 
   @Delete(':id')

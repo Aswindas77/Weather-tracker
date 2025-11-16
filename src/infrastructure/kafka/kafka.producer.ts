@@ -1,0 +1,57 @@
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { Consumer, Kafka, Partitioners, Producer } from "kafkajs";
+
+@Injectable()
+export class KafkaProducer implements OnModuleInit,OnModuleDestroy{
+    private readonly logger =new Logger(KafkaProducer.name);
+    private kafka:Kafka;
+    private producer:Producer;
+    private consumer:Consumer;
+
+    constructor(){
+        this.kafka =new Kafka({
+            clientId:'weather-traker',
+            brokers:['localhost:9092'],
+            
+        });
+
+        this.producer = this.kafka.producer({
+      createPartitioner: Partitioners.LegacyPartitioner,
+    });
+
+    this.consumer = this.kafka.consumer({ groupId: 'weather-group' });
+    }
+
+    async onModuleInit() {
+        await Promise.all([
+            this.producer.connect(),
+            this.consumer.connect(),
+        ]);
+        this.logger.log('Kafka client connected');
+    }
+
+    async onModuleDestroy() {
+        await Promise.allSettled([
+            this.producer.disconnect(),
+            this.consumer.disconnect(),
+        ]);
+        this.logger.log('Kafka client disconnected');
+    }
+
+    async sendMessage(topic: string, message: any) {
+    await this.producer.send({
+      topic,
+      messages: [{ value: JSON.stringify(message) }],
+    });
+
+    this.logger.log(`Sent message to topic: ${topic}`);
+  }
+
+    getProducer():Producer{
+        return this.producer;
+    }
+
+    getConsumer():Consumer{
+        return this.consumer;
+    }
+}

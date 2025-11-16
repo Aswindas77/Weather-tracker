@@ -1,10 +1,12 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Param } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Weather } from './weather.schema';
 import { Model } from 'mongoose';
 import { CreateWeatherDto } from './weather.dto';
 import { RabbitMQService } from '../infrastructure/rabbitMq/queue.service';
 import axios from 'axios';
+import { KafkaService } from 'src/infrastructure/kafka/kafka.service';
+
 
 @Injectable()
 export class WeatherService {
@@ -14,16 +16,19 @@ export class WeatherService {
   constructor(
     @InjectModel(Weather.name) private weatherModel: Model<Weather>,
     private readonly rabbitMQService: RabbitMQService,
+    private readonly kafkaService:KafkaService,
   ) {}
 
   async createWeather(data: CreateWeatherDto) {
     await this.rabbitMQService.sendToQueue(this.WEATHER_QUEUE, data);
+    
     return {
       message: 'Weather request queued successfully',
       city: data.city,
       
     };
   }
+
 
   async processWeatherData(data: CreateWeatherDto) {
     const apiKey = this.validateApiKey();
@@ -115,11 +120,61 @@ private async saveWeatherEntry(data: CreateWeatherDto, weatherReport: any) {
 
 
   
-  async update(id: string, data: CreateWeatherDto) {
-    const updated = await this.weatherModel.findByIdAndUpdate(id, data, { new: true });
+  async getWeatherUsingKafka(id: string) {
 
-    if (!updated) throw new HttpException('Record not found', HttpStatus.NOT_FOUND);
-    return updated;
+    const record =await this.weatherModel.findById(id)
+
+   
+     if (!record) throw new HttpException("City not found", HttpStatus.NOT_FOUND);
+
+    const apiKey=this.validateApiKey();
+    const liveWeather = await this.fetchWeatherFromAPI({
+    city: record.city,
+    lat: record.lat,
+    lon: record.lon,
+    }, apiKey);
+    
+    const weatherReport=this.extractWeatherReport(liveWeather);
+
+    const payload = {
+    id: record._id,    
+    city: record.city,
+    lat: record.lat,
+    lon: record.lon,
+  } as const;
+
+    this.kafkaService.sendMessage('weather-update',{payload});
+
+    return {
+      ...record.toObject(),
+      weatherReport,
+    };
+    
+    
+  }
+
+
+  
+  async updateWeatherData(id:string, data:CreateWeatherDto){
+    const apiKey=this.validateApiKey();
+
+    const weatherData = await this.fetchWeatherFromAPI(data, apiKey);
+
+    const weatherReport = this.extractWeatherReport(weatherData);
+
+    const updated=await this.weatherModel.findByIdAndUpdate(
+      id,
+      {
+        weatherReport,
+        updatedAt:new Date(),
+      },
+      {new:true}
+    );
+
+    if(!updated){
+      throw new HttpException(`Weather record with id ${id} not found`,HttpStatus.NOT_FOUND,)
+    }
+    return updated
   }
 
 

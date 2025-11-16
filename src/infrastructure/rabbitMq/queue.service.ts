@@ -39,6 +39,7 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  
   getChannel(): amqp.Channel | null {
     return this.channel;
   }

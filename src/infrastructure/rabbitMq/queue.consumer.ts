@@ -8,17 +8,22 @@ import { WeatherService } from '../../weather/weather.service';
 export class RabbitConsumer implements OnApplicationBootstrap {
   private readonly logger = new Logger(RabbitConsumer.name);
 
+
   constructor(
     private readonly rabbitMQService: RabbitMQService,
     private readonly weatherService: WeatherService,
   ) {}
 
+
+
   async onApplicationBootstrap() {
     await this.consume('weather-requests', async (msg) => {
-      this.logger.log(` Message received for city: ${msg.city}`);
+      this.logger.log(`[rabbit mq] Message received for city: ${msg.city}`);
       await this.weatherService.processWeatherData(msg);
     });
   }
+
+
 
   async consume(
     queue: string,
@@ -34,6 +39,9 @@ export class RabbitConsumer implements OnApplicationBootstrap {
     this.logger.log(` Listening on queue "${queue}"`);
   }
 
+
+
+
   private async setupQueue(
     channel: amqp.Channel,
     queue: string,
@@ -42,10 +50,13 @@ export class RabbitConsumer implements OnApplicationBootstrap {
     void channel.prefetch(1);
   }
 
+
+
+
   private registerConsumer(
     channel: amqp.Channel,
     queue: string,
-    callback: (msg: any) => void | Promise<void>,
+    callback: (msg: CreateWeatherDto) => void | Promise<void>,
   ): void {
     const onMessage = (msg: amqp.ConsumeMessage | null) =>
       this.onMessageReceived(channel, msg, callback);
@@ -53,19 +64,22 @@ export class RabbitConsumer implements OnApplicationBootstrap {
     void channel.consume(queue, onMessage, { noAck: false });
   }
 
+
+
   private onMessageReceived(
     channel: amqp.Channel,
     msg: amqp.ConsumeMessage | null,
-    callback: (msg: any) => void | Promise<void>,
+    callback: (msg: CreateWeatherDto) => void | Promise<void>,
   ): void {
     if (!msg) return;
     this.handleMessage(channel, msg, callback);
   }
 
+  
   private handleMessage(
     channel: amqp.Channel,
     msg: amqp.ConsumeMessage,
-    callback: (msg: any) => void | Promise<void>,
+    callback: (msg: CreateWeatherDto) => void | Promise<void>,
   ) {
     try {
       const data = JSON.parse(msg.content.toString()) as CreateWeatherDto;
