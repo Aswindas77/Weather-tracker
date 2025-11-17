@@ -15,6 +15,6 @@ import { KafkaModule } from 'src/infrastructure/kafka/kafka.module';
   ],
   controllers: [WeatherController],
   providers: [WeatherService],
-  exports:[WeatherService]
+  exports:[WeatherService,MongooseModule]
 })
 export class WeatherModule {}

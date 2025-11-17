@@ -10,7 +10,6 @@ export class Weather extends Document {
     lat:number;
     @Prop({required:true})
     lon:number;
-    
     @Prop({
         type: {
             temperature: { type: Number, required: true },
@@ -20,7 +19,6 @@ export class Weather extends Document {
         required: true,
     })
     weatherReport: { temperature: number; humidity: number; pressure: number };
-
 }
 
-export const WeatherSchema =SchemaFactory.createForClass(Weather)
+export const WeatherSchema = SchemaFactory.createForClass(Weather);

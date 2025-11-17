@@ -8,7 +8,7 @@ import { WeatherModule } from '../../weather/weather.module'
 @Module({
   imports:[forwardRef(()=>WeatherModule)],
   providers: [RabbitMQService,RabbitConsumer],
-  exports: [RabbitMQService,RabbitConsumer],
+  exports: [RabbitMQService,RabbitConsumer,],
 })
 export class QueueModule {}
 

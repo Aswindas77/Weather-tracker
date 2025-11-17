@@ -1,16 +1,13 @@
-import {Injectable, Logger, OnModuleInit, OnModuleDestroy,}
- from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy, }
+  from '@nestjs/common';
 import * as amqp from 'amqplib';
-import  {CreateWeatherDto}  from '../../weather/weather.dto';
+import { CreateWeatherDto } from '../../weather/weather.dto';
 
 @Injectable()
 export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RabbitMQService.name);
   private connectionModel: amqp.ChannelModel | null = null;
   private channel: amqp.Channel | null = null;
-  
-
-
   async onModuleInit() {
     try {
       this.connectionModel = await amqp.connect('amqp://localhost:5672');
@@ -22,10 +19,6 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
       throw error;
     }
   }
-
-
-
-
   async onModuleDestroy() {
     try {
       if (this.channel) {
@@ -38,14 +31,9 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
       this.logger.error('Error closing RabbitMQ connection', error);
     }
   }
-
-  
   getChannel(): amqp.Channel | null {
     return this.channel;
   }
-
-
-
   async sendToQueue(queue: string, message: CreateWeatherDto): Promise<void> {
     if (!this.channel) {
       throw new Error('RabbitMQ channel not initialized');
@@ -56,8 +44,6 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
     });
     this.logger.log(`Message sent to ${queue}`);
   }
-
-  
 }
 
 

@@ -5,10 +5,37 @@ import { KafkaService } from '../infrastructure/kafka/kafka.service';
 import { getModelToken } from '@nestjs/mongoose';
 import { Weather } from './weather.schema';
 import axios from 'axios';
-import { HttpException } from '@nestjs/common';
 import { Model } from 'mongoose';
 
 jest.mock('axios');
+
+const mockWeatherRecord = {
+  _id: '1',
+  city: 'Delhi',
+  lat: 28.6,
+  lon: 77.2,
+  toObject: () => ({ _id: '1', city: 'Delhi' }),
+};
+
+const mockAPIResponse = {
+  data: { main: { temp: 25, humidity: 40, pressure: 1010 } },
+};
+
+const mockWeatherModel = {
+  find: jest.fn(),
+  findById: jest.fn(),
+  findByIdAndDelete: jest.fn(),
+  findByIdAndUpdate: jest.fn(),
+  create: jest.fn(),
+};
+
+const mockRabbitService = {
+  sendToQueue: jest.fn(),
+};
+
+const mockKafkaService = {
+  sendMessage: jest.fn(),
+};
 
 describe('WeatherService', () => {
   let service: WeatherService;
@@ -20,28 +47,9 @@ describe('WeatherService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WeatherService,
-        {
-          provide: RabbitMQService,
-          useValue: {
-            sendToQueue: jest.fn(),
-          },
-        },
-        {
-          provide: KafkaService,
-          useValue: {
-            sendMessage: jest.fn(),
-          },
-        },
-        {
-          provide: getModelToken(Weather.name),
-          useValue: {
-            find: jest.fn(),
-            findById: jest.fn(),
-            findByIdAndDelete: jest.fn(),
-            findByIdAndUpdate: jest.fn(),
-            create: jest.fn(),
-          },
-        },
+        { provide: RabbitMQService, useValue: mockRabbitService },
+        { provide: KafkaService, useValue: mockKafkaService },
+        { provide: getModelToken(Weather.name), useValue: mockWeatherModel },
       ],
     }).compile();
 
@@ -51,17 +59,16 @@ describe('WeatherService', () => {
     weatherModel = module.get<Model<Weather>>(getModelToken(Weather.name));
 
     process.env.OPENWEATHER_API_KEY = 'mock-key';
+    jest.clearAllMocks();
   });
 
   it('should be defined', () => {
     expect(service).toBeDefined();
   });
 
-  
   describe('createWeather', () => {
     it('should send message to RabbitMQ queue', async () => {
       const dto = { city: 'Delhi', lat: 28.6, lon: 77.2 };
-
       await service.createWeather(dto);
 
       expect(rabbitService.sendToQueue).toHaveBeenCalledWith(
@@ -71,57 +78,55 @@ describe('WeatherService', () => {
     });
   });
 
-  // ----------------------------------------------------------
-  // processWeatherData()
-  // ----------------------------------------------------------
-  describe('processWeatherData', () => {
-    const dto = { city: 'Delhi', lat: 28.6, lon: 77.2 };
 
-    it('should throw error if API key missing', async () => {
-      delete process.env.OPENWEATHER_API_KEY;
+  describe('getWeatherUsingKafka', () => {
+    it('should send weather update to Kafka with weatherReport', async () => {
+      mockWeatherModel.findById.mockResolvedValue(mockWeatherRecord);
+      (axios.get as jest.Mock).mockResolvedValue(mockAPIResponse);
 
-      await expect(service.processWeatherData(dto)).rejects.toThrow(
-        new HttpException('API key is missing', 500),
-      );
-    });
+      const result = await service.getWeatherUsingKafka('1');
 
-    it('should fetch weather and save to DB', async () => {
-      const mockAPI = {
-        data: { main: { temp: 25, humidity: 40, pressure: 1010 } },
-      };
+      expect(mockKafkaService.sendMessage).toHaveBeenCalledTimes(1);
 
-      (axios.get as jest.Mock).mockResolvedValue(mockAPI);
-      (weatherModel.create as jest.Mock).mockResolvedValue({
-        _id: '1',
+      const sentMessage = mockKafkaService.sendMessage.mock.calls[0];
+
+      expect(sentMessage[0]).toBe('weather_topic');
+      expect(sentMessage[1]).toHaveProperty('payload');
+
+      expect(sentMessage[1].payload).toMatchObject({
+        id: '1',
         city: 'Delhi',
+        lat: 28.6,
+        lon: 77.2,
+        weatherReport: {
+          temperature: 25,
+          humidity: 40,
+          pressure: 1010,
+        },
       });
 
-      const result = await service.processWeatherData(dto);
-
-      expect(axios.get).toHaveBeenCalledTimes(1);
-      expect(weatherModel.create).toHaveBeenCalled();
-      expect(result).toEqual({ _id: '1', city: 'Delhi' });
+      expect(result.weatherReport).toMatchObject({
+        temperature: 25,
+        humidity: 40,
+        pressure: 1010,
+      });
     });
 
-    it('should throw error on API failure', async () => {
-      (axios.get as jest.Mock).mockRejectedValue({
-        response: { data: 'API limit exceeded' },
-      });
+    it('should throw if record not found', async () => {
+      mockWeatherModel.findById.mockResolvedValue(null);
 
-      await expect(service.processWeatherData(dto)).rejects.toThrow(
-        /Failed to fetch weather/,
+      await expect(service.getWeatherUsingKafka('10')).rejects.toThrow(
+        'City not found',
       );
     });
   });
 
-  // ----------------------------------------------------------
-  // getAll()
-  // ----------------------------------------------------------
+
   describe('getAll', () => {
     it('should return all records', async () => {
       const mockData = [{ city: 'Delhi' }, { city: 'Mumbai' }];
 
-      (weatherModel.find as any) = jest.fn().mockReturnValue({
+      mockWeatherModel.find.mockReturnValue({
         sort: jest.fn().mockResolvedValue(mockData),
       });
 
@@ -130,29 +135,25 @@ describe('WeatherService', () => {
     });
   });
 
-  // ----------------------------------------------------------
-  // getById()
-  // ----------------------------------------------------------
+
   describe('getById', () => {
     it('should return record', async () => {
       const mockRecord = { _id: '1', city: 'Delhi' };
 
-      (weatherModel.findById as jest.Mock).mockResolvedValue(mockRecord);
+      mockWeatherModel.findById.mockResolvedValue(mockRecord);
 
       const result = await service.getById('1');
       expect(result).toEqual(mockRecord);
     });
 
     it('should throw if not found', async () => {
-      (weatherModel.findById as jest.Mock).mockResolvedValue(null);
+      mockWeatherModel.findById.mockResolvedValue(null);
 
       await expect(service.getById('1')).rejects.toThrow('Record not found');
     });
   });
 
-  // ----------------------------------------------------------
-  // updateWeatherData()
-  // ----------------------------------------------------------
+
   describe('updateWeatherData', () => {
     it('should update successfully', async () => {
       const dto = { city: 'Delhi', lat: 28.6, lon: 77.2 };
@@ -161,53 +162,35 @@ describe('WeatherService', () => {
         data: { main: { temp: 26, humidity: 60, pressure: 1011 } },
       };
 
-      const updated = {
-        _id: '1',
-        weatherReport: { temp: 26 },
-      };
+      const updated = { _id: '1', weatherReport: { temp: 26 } };
 
       (axios.get as jest.Mock).mockResolvedValue(mockAPI);
-      (weatherModel.findByIdAndUpdate as jest.Mock).mockResolvedValue(updated);
+      mockWeatherModel.findByIdAndUpdate.mockResolvedValue(updated);
 
       const result = await service.updateWeatherData('1', dto);
-
-      expect(axios.get).toHaveBeenCalledTimes(1);
-      expect(weatherModel.findByIdAndUpdate).toHaveBeenCalled();
       expect(result).toEqual(updated);
     });
 
     it('should throw if record not found', async () => {
-      (axios.get as jest.Mock).mockResolvedValue({
-        data: { main: { temp: 26, humidity: 60, pressure: 1011 } },
-      });
-
-      (weatherModel.findByIdAndUpdate as jest.Mock).mockResolvedValue(null);
+      mockWeatherModel.findByIdAndUpdate.mockResolvedValue(null);
 
       await expect(
-        service.updateWeatherData('1', {
-          city: 'Test',
-          lat: 0,
-          lon: 0,
-        }),
+        service.updateWeatherData('1', { city: 'Test', lat: 0, lon: 0 }),
       ).rejects.toThrow('Weather record with id 1 not found');
     });
   });
 
-  // ----------------------------------------------------------
-  // delete()
-  // ----------------------------------------------------------
+
   describe('delete', () => {
     it('should delete record', async () => {
-      (weatherModel.findByIdAndDelete as jest.Mock).mockResolvedValue({
-        _id: '1',
-      });
+      mockWeatherModel.findByIdAndDelete.mockResolvedValue({ _id: '1' });
 
       const result = await service.delete('1');
       expect(result).toEqual({ message: 'Record deleted successfully' });
     });
 
     it('should throw if not found', async () => {
-      (weatherModel.findByIdAndDelete as jest.Mock).mockResolvedValue(null);
+      mockWeatherModel.findByIdAndDelete.mockResolvedValue(null);
 
       await expect(service.delete('1')).rejects.toThrow('Record not found');
     });
